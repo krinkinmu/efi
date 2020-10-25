@@ -15,9 +15,6 @@ default: all
 bootx64.efi: clib.o main.o
 	$(LD) $(LDFLAGS) $^ -out:$@
 
-test: test.c clib.c
-	$(CC) -g test.c clib.c -o test
-
 -include $(SRCS:.c=.d)
 
 .PHONY: clean all default
