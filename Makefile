@@ -2,18 +2,21 @@ CC := clang
 LD := lld
 
 CFLAGS := -ffreestanding -MMD -mno-red-zone -std=c11 \
-	-target x86_64-unknown-windows
+	-target x86_64-unknown-windows -Wall -Werror -pedantic
 LDFLAGS := -flavor link -subsystem:efi_application -entry:efi_main
 
-SRCS := main.c
+SRCS := main.c clib.c
 
 default: all
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-bootx64.efi: main.o
-	$(LD) $(LDFLAGS) $< -out:$@
+bootx64.efi: clib.o main.o
+	$(LD) $(LDFLAGS) $^ -out:$@
+
+test: test.c clib.c
+	$(CC) -g test.c clib.c -o test
 
 -include $(SRCS:.c=.d)
 

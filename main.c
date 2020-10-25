@@ -1,101 +1,5 @@
+#include "clib.h"
 #include "efi/efi.h"
-
-// Clang assumes that there are mem* functions defined somewhere, so it
-// occasionally generates code that uses them.
-void *memcpy(void *dst, const void *src, size_t size)
-{
-	const char *from = src;
-	char *to = dst;
-
-	for (size_t i = 0; i < size; ++i)
-		*to++ = *from++;
-
-	return dst;
-}
-
-static uint16_t *u64_to_str(uint64_t x, uint16_t *buf)
-{
-	uint16_t *pos = buf;
-	uint16_t *begin;
-	uint16_t *end;
-
-	*pos++ = u'0';
-	*pos++ = u'x';
-	begin = pos;
-	do
-	{
-		if ((x & 0xf) < 10)
-			*pos++ = u'0' + (x & 0xf);
-		else
-			*pos++ = u'A' + (x & 0xf) - 10;
-		x >>= 4;
-	} while (x);
-	end = pos;
-
-	while (begin < end)
-	{
-		const uint16_t tmp = *begin;
-
-		*begin = *(end - 1);
-		*(end - 1) = tmp;
-		++begin;
-		--end;
-	}
-
-	return pos;
-}
-
-static uint16_t *efi_guid_to_str(const struct efi_guid *guid, uint16_t *buf)
-{
-	uint16_t *pos = buf;
-	size_t i;
-
-	*pos++ = u'{';
-	*pos++ = u' ';
-	pos = u64_to_str(guid->data1, pos);
-	*pos++ = u',';
-	*pos++ = u' ';
-	pos = u64_to_str(guid->data2, pos);
-	*pos++ = u',';
-	*pos++ = u' ';
-	pos = u64_to_str(guid->data3, pos);
-	*pos++ = u',';
-	*pos++ = u' ';
-	*pos++ = u'{';
-	*pos++ = u' ';
-	pos = u64_to_str(guid->data4[0], pos);
-	for (i = 1; i < 8; ++i)
-	{
-		*pos++ = u',';
-		*pos++ = u' ';
-		pos = u64_to_str(guid->data4[i], pos);
-	}
-	*pos++ = u' ';
-	*pos++ = u'}';
-	*pos++ = u' ';
-	*pos++ = u'}';
-
-	return pos;
-}
-
-static uint16_t *efi_device_path_to_str(
-	const struct efi_device_path_protocol *path, uint16_t *buf)
-{
-	uint16_t *pos = buf;
-
-	*pos++ = u'{';
-	*pos++ = u' ';
-	pos = u64_to_str(path->type, pos);
-	*pos++ = u',';
-	*pos++ = u' ';
-	pos = u64_to_str(path->subtype, pos);
-	*pos++ = u',';
-	*pos++ = u' ';
-	pos = u64_to_str(path->length, pos);
-	*pos++ = u' ';
-	*pos++ = u'}';
-	return pos;
-}
 
 static efi_status_t efi_guid_print(
 	struct efi_simple_text_output_protocol *out,
@@ -103,7 +7,24 @@ static efi_status_t efi_guid_print(
 {
 	uint16_t buf[128];
 
-	*efi_guid_to_str(guid, buf) = 0;
+	u16snprintf(
+		buf,
+		sizeof(buf)/sizeof(buf[0]),
+		"{ 0x%x, 0x%x, 0x%x, {"
+		" 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x, 0x%x "
+		"} }",
+		(unsigned)guid->data1,
+		(unsigned)guid->data2,
+		(unsigned)guid->data3,
+		(unsigned)guid->data4[0],
+		(unsigned)guid->data4[1],
+		(unsigned)guid->data4[2],
+		(unsigned)guid->data4[3],
+		(unsigned)guid->data4[4],
+		(unsigned)guid->data4[5],
+		(unsigned)guid->data4[6],
+		(unsigned)guid->data4[7],
+		(unsigned)guid->data4[8]);
 	return out->output_string(out, buf);
 }
 
@@ -114,16 +35,22 @@ static efi_status_t efi_device_path_print(
 	efi_status_t status;
 	uint16_t buf[128];
 
-	*efi_device_path_to_str(path, buf) = 0;
+	u16snprintf(
+		buf,
+		sizeof(buf)/sizeof(buf[0]),
+		"{ 0x%x, 0x%x, 0x%x }",
+		(unsigned)path->type,
+		(unsigned)path->subtype,
+		(unsigned)path->length);
 	status = out->output_string(out, buf);
 	if (status != 0)
 		return status;
 
 	if (path->type == 0x4 && path->subtype == 0x4) {
-		uint16_t header[] = u": path = ";
 		uint16_t *str = (uint16_t *)(path + 1);
 
-		status = out->output_string(out, header);
+		u16snprintf(buf, sizeof(buf)/sizeof(buf[0]), ": path = ");
+		status = out->output_string(out, buf);
 		if (status == 0)
 			status = out->output_string(out, str);
 	}
