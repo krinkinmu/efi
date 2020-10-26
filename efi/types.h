@@ -9,6 +9,20 @@ typedef void *efi_handle_t;
 typedef uint64_t efi_status_t;
 typedef uint64_t efi_uint_t;
 
+struct efi_time {
+	uint16_t year;
+	uint8_t month;
+	uint8_t day;
+	uint8_t hour;
+	uint8_t minute;
+	uint8_t second;
+	uint8_t pad1;
+	uint32_t nanosecond;
+	int16_t time_zone;
+	uint8_t daylight;
+	uint8_t pad2;
+};
+
 struct efi_guid
 {
 	uint32_t data1;

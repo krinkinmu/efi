@@ -17,7 +17,8 @@ struct efi_boot_table
 	void (*unused3)();
 	void (*unused4)();
 	void (*unused5)();
-	void (*unused6)();
+
+	efi_status_t (*allocate_pool)(enum efi_memory_type, efi_uint_t, void **);
 	efi_status_t (*free_pool)(void *);
 
 	// Event & Timer Services
