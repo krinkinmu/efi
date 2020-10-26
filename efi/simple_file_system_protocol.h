@@ -15,3 +15,4 @@ struct efi_simple_file_system_protocol {
 };
 
 #endif  // __EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_H__
+

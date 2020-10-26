@@ -66,3 +66,4 @@ struct efi_file_protocol {
 };
 
 #endif  // __EFI_FILE_PROTOCOL_H__
+
