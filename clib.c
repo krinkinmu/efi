@@ -28,6 +28,7 @@ enum format_type {
 	FMT_PTR,
 	FMT_PTRDIFF,
 	FMT_STR,
+	FMT_UEFI_STR,
 	FMT_PERCENT,
 	FMT_CHAR,
 	FMT_NONE,
@@ -60,6 +61,22 @@ static void buffer_append(struct format_buffer *buffer, int code)
 	if (buffer->count < buffer->size)
 		buffer->buffer[buffer->count] = code;
 	++buffer->count;
+}
+
+static void buffer_copy_u16(
+	struct format_buffer *buffer, const uint16_t *begin, const uint16_t *end)
+{
+	const size_t len = end - begin;
+	const size_t rem =
+		buffer->count < buffer->size
+		? buffer->size - buffer->count
+		: 0;
+	const size_t copy = len < rem ? len : rem;
+	uint16_t *pos = buffer->buffer + buffer->count;
+
+	for (size_t i = 0; i < copy; ++i)
+		*pos++ = begin[i];
+	buffer->count += len;
 }
 
 static void buffer_copy(
@@ -277,6 +294,9 @@ static const char *format_parse_spec(const char *str, struct format *config)
 	case 's':
 		config->type = FMT_STR;
 		break;
+	case 'w':
+		config->type = FMT_UEFI_STR;
+		break;
 	case 'p':
 		config->type = FMT_PTR;
 		break;
@@ -348,6 +368,11 @@ static int vsnprintf(
 		case FMT_STR: {
 			const char *str = va_arg(args, const char *);
 			buffer_copy(&buf, str, str + strlen(str));
+			break;
+		}
+		case FMT_UEFI_STR: {
+			const uint16_t *str = va_arg(args, const uint16_t *);
+			buffer_copy_u16(&buf, str, str + u16strlen(str));
 			break;
 		}
 		case FMT_CHAR: {
@@ -425,6 +450,15 @@ int u16snprintf(uint16_t *buffer, size_t size, const char *fmt, ...)
 size_t strlen(const char *str)
 {
 	const char *pos = str;
+
+	while (*pos++)
+		;
+	return pos - str - 1;
+}
+
+size_t u16strlen(const uint16_t *str)
+{
+	const uint16_t *pos = str;
 
 	while (*pos++)
 		;

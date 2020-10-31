@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 size_t strlen(const char *str);
+size_t u16strlen(const uint16_t *str);
 void *memcpy(void *dst, const void *src, size_t size);
 void *memset(void *ptr, int value, size_t size);
 int isdigit(int code);
