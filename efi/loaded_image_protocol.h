@@ -10,12 +10,12 @@
 
 struct efi_loaded_image_protocol {
 	uint32_t revision;
-	efi_handle_t parent_handle;
-	struct efi_system_table *system_table;
+	efi_handle_t parent;
+	struct efi_system_table *system;
 
 	// Source location of the image
-	efi_handle_t device_handle;
-	struct efi_device_path_protocol *file_path;
+	efi_handle_t device;
+	struct efi_device_path_protocol *filepath;
 	void *reserved;
 
 	// Image's load options
