@@ -86,6 +86,12 @@ static efi_status_t cleanup(
 	efi_status_t status = 0;
 	efi_status_t other;
 
+	if (app->rootdir) {
+		other = app->rootdir->close(app->rootdir);
+		if (other == 0)
+			status = other;
+	}
+
 	if (app->rootfs)
 	{
 		other = app->system->boot->close_protocol(
@@ -128,7 +134,7 @@ efi_status_t efi_main(
 		goto out;
 
 	size = sizeof(file_info);
-	status = app.rootdir->get_info(kernel, &guid, &size, (void *)&file_info);
+	status = kernel->get_info(kernel, &guid, &size, (void *)&file_info);
 	if (status != 0)
 		goto close;
 
