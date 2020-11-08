@@ -51,8 +51,9 @@ struct efi_file_protocol {
     efi_status_t (*read)(struct efi_file_protocol *, efi_uint_t *, void *);
 
     void (*unused2)();
-    void (*unused3)();
-    void (*unused4)();
+
+    efi_status_t (*get_position)(struct efi_file_protocol *, uint64_t *);
+    efi_status_t (*set_position)(struct efi_file_protocol *, uint64_t);
 
     efi_status_t (*get_info)(
         struct efi_file_protocol *, struct efi_guid *, efi_uint_t *, void *);
