@@ -101,7 +101,7 @@ static void buffer_format_unsigned(
 	char buf[32];
 	char *pos = buf;
 
-	while (v) {
+	do {
 		const unsigned d = v % config->base;
 
 		v = v / config->base;
@@ -110,7 +110,7 @@ static void buffer_format_unsigned(
 		else
 			*pos = d - 10 + 'A';
 		++pos;
-	}
+	} while (v);
 
 	for (char *l = buf, *r = pos - 1; l < r; ++l, --r) {
 		const char c = *l;
