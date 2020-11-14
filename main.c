@@ -127,16 +127,14 @@ static efi_status_t cleanup_efi_app(
 			status = other;
 	}
 
-	if (app->rootfs)
-	{
+	if (app->rootfs) {
 		other = app->system->boot->close_protocol(
 			app->root_device, &rootfs_guid, app->handle, NULL);
 		if (status == EFI_SUCCESS)
 			status = other;
 	}
 
-	if (app->image)
-	{
+	if (app->image) {
 		other = app->system->boot->close_protocol(
 			app->handle, &image_guid, app->handle, NULL);
 		if (status == EFI_SUCCESS)
@@ -161,11 +159,18 @@ static efi_status_t read_efl64_program_headers(
 {
 	efi_status_t status;
 
-	status = boot->allocate_pool(EFI_LOADER_DATA, hdr->e_phnum * hdr->e_phentsize, (void **)phdrs);
+	status = boot->allocate_pool(
+		EFI_LOADER_DATA,
+		hdr->e_phnum * hdr->e_phentsize,
+		(void **)phdrs);
 	if (status != EFI_SUCCESS)
 		return status;
 
-	status = efi_read_fixed(file, hdr->e_phoff, hdr->e_phentsize * hdr->e_phnum, (void *)*phdrs);
+	status = efi_read_fixed(
+		file,
+		hdr->e_phoff,
+		hdr->e_phentsize * hdr->e_phnum,
+		(void *)*phdrs);
 	if (status != EFI_SUCCESS) {
 		boot->free_pool((void *)*phdrs);
 		return status;
@@ -305,11 +310,11 @@ static efi_status_t dump_elf64_program_header(
 	uint16_t msg[512];
 
 	if (phdr->p_type < sizeof(type) / sizeof(type[0]))
-		u16snprintf(
-			msg, sizeof(msg), "p_type: %s, ", type[phdr->p_type]);
+		u16snprintf(msg, sizeof(msg),
+			"p_type: %s, ", type[phdr->p_type]);
 	else
-		u16snprintf(
-			msg, sizeof(msg), "p_type: 0x%lx, ", (unsigned long)phdr->p_type);
+		u16snprintf(msg, sizeof(msg),
+			"p_type: 0x%lx, ", (unsigned long)phdr->p_type);
 
 	status = out->output_string(out, msg);
 	if (status != EFI_SUCCESS)
