@@ -9,6 +9,9 @@ typedef void *efi_handle_t;
 typedef uint64_t efi_status_t;
 typedef uint64_t efi_uint_t;
 
+static const efi_status_t EFI_SUCCESS = 0;
+static const efi_status_t EFI_UNSUPPORTED = 3;
+
 struct efi_time {
 	uint16_t year;
 	uint8_t month;

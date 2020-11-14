@@ -15,7 +15,7 @@ struct efi_system_table
 	void *unused5;
 	struct efi_simple_text_output_protocol *out;
 	void *unused6;
-	void *unused7;
+	struct efi_simple_text_output_protocol *err;
 	void *unused8;
 	struct efi_boot_table *boot;
 	efi_uint_t unused10;

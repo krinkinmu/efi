@@ -22,20 +22,20 @@ static efi_status_t efi_read_fixed(
 	size_t read = 0;
 
 	status = file->set_position(file, offset);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		return status;
 
 	while (read < size) {
 		efi_uint_t remains = size - read;
 
 		status = file->read(file, &remains, (void *)(buf + read));
-		if (status != 0)
+		if (status != EFI_SUCCESS)
 			return status;
 
 		read += remains;
 	}
 
-	return 0;
+	return EFI_SUCCESS;
 }
 
 static efi_status_t get_image(
@@ -90,17 +90,17 @@ static efi_status_t setup(
 	app->system = system;
 
 	status = get_image(handle, system, &app->image);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		return status;
 
 	app->root_device = app->image->device;
 
 	status = get_rootfs(handle, system, app->root_device, &app->rootfs);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		return status;
 
 	status = get_rootdir(app->rootfs, &app->rootdir);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		return status;
 
 	return system->out->clear_screen(system->out);
@@ -111,12 +111,12 @@ static efi_status_t cleanup(
 {
 	struct efi_guid image_guid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
 	struct efi_guid rootfs_guid = EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID;
-	efi_status_t status = 0;
+	efi_status_t status = EFI_SUCCESS;
 	efi_status_t other;
 
 	if (app->rootdir) {
 		other = app->rootdir->close(app->rootdir);
-		if (other == 0)
+		if (other == EFI_SUCCESS)
 			status = other;
 	}
 
@@ -124,7 +124,7 @@ static efi_status_t cleanup(
 	{
 		other = app->system->boot->close_protocol(
 			app->root_device, &rootfs_guid, app->handle, NULL);
-		if (status == 0)
+		if (status == EFI_SUCCESS)
 			status = other;
 	}
 
@@ -132,7 +132,7 @@ static efi_status_t cleanup(
 	{
 		other = app->system->boot->close_protocol(
 			app->handle, &image_guid, app->handle, NULL);
-		if (status == 0)
+		if (status == EFI_SUCCESS)
 			status = other;
 	}
 
@@ -146,45 +146,135 @@ static efi_status_t read_elf64_header(
 	return efi_read_fixed(file, /*offset*/0, sizeof(*hdr), hdr);
 }
 
-static efi_status_t dump_elf64_header(
+static efi_status_t read_efl64_program_headers(
+	struct efi_boot_table *boot,
+	struct efi_file_protocol *file,
+	const struct elf64_ehdr *hdr,
+	struct elf64_phdr **phdrs)
+{
+	efi_status_t status;
+
+	status = boot->allocate_pool(EFI_LOADER_DATA, hdr->e_phnum * hdr->e_phentsize, (void **)phdrs);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = efi_read_fixed(file, hdr->e_phoff, hdr->e_phentsize * hdr->e_phnum, (void *)*phdrs);
+	if (status != EFI_SUCCESS) {
+		boot->free_pool((void *)*phdrs);
+		return status;
+	}
+
+	return EFI_SUCCESS;
+}
+
+static efi_status_t verify_elft64_header(
 	struct efi_simple_text_output_protocol *out,
 	const struct elf64_ehdr *hdr)
 {
-	uint16_t buffer[512];
+	uint16_t msg[128];
 
-	u16snprintf(buffer, sizeof(buffer),
-		"e_ident:     0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x 0x%x\r\n"
-		"e_type:      0x%x\r\n"
-		"e_machine:   0x%x\r\n"
-		"e_version:   0x%lx\r\n"
-		"e_entry:     0x%llx\r\n"
-		"e_phoff:     0x%llx\r\n"
-		"e_shoff:     0x%llx\r\n"
-		"e_flags:     0x%lx\r\n"
-		"e_ehsize:    0x%x\r\n"
-		"e_phentsize: 0x%x\r\n"
-		"e_phnum:     0x%x\r\n"
-		"e_shentsize: 0x%x\r\n"
-		"e_shnum:     0x%x\r\n"
-		"e_shstrndx:  0x%x\r\n",
-		(unsigned)hdr->e_ident[0], (unsigned)hdr->e_ident[1], (unsigned)hdr->e_ident[2], (unsigned)hdr->e_ident[3],
-		(unsigned)hdr->e_ident[4], (unsigned)hdr->e_ident[5], (unsigned)hdr->e_ident[6], (unsigned)hdr->e_ident[7],
-		(unsigned)hdr->e_ident[8], (unsigned)hdr->e_ident[9], (unsigned)hdr->e_ident[10], (unsigned)hdr->e_ident[11],
-		(unsigned)hdr->e_ident[12], (unsigned)hdr->e_ident[13], (unsigned)hdr->e_ident[14], (unsigned)hdr->e_ident[15],
-		(unsigned)hdr->e_type,
-		(unsigned)hdr->e_machine,
-		(unsigned long)hdr->e_version,
-		(unsigned long long)hdr->e_entry,
-		(unsigned long long)hdr->e_phoff,
-		(unsigned long long)hdr->e_shoff,
-		(unsigned long)hdr->e_flags,
-		(unsigned)hdr->e_ehsize,
-		(unsigned)hdr->e_phentsize,
-		(unsigned)hdr->e_phnum,
-		(unsigned)hdr->e_shentsize,
-		(unsigned)hdr->e_shnum,
-		(unsigned)hdr->e_shstrndx);
-	return out->output_string(out, buffer);
+	if (hdr->e_ident[EI_MAG0] != 0x7f
+		|| hdr->e_ident[EI_MAG1] != 'E'
+		|| hdr->e_ident[EI_MAG2] != 'L'
+		|| hdr->e_ident[EI_MAG3] != 'F') {
+		u16snprintf(msg, sizeof(msg),
+			"No ELF magic sequence in the ELF header\r\n");
+		out->output_string(out, msg);
+		return EFI_UNSUPPORTED;
+	}
+
+	if (hdr->e_type != ET_EXEC) {
+		u16snprintf(msg, sizeof(msg),
+			"Unsupported ELF file type 0x%x, the only type 0x%x is supported\r\n",
+			(unsigned)hdr->e_type,
+			(unsigned)ET_EXEC);
+		out->output_string(out, msg);
+		return EFI_UNSUPPORTED;
+	}
+
+	if (hdr->e_ident[EI_CLASS] != ELFCLASS64) {
+		u16snprintf(msg, sizeof(msg),
+			"Unsupported ELF class 0x%x, the only class 0x%x is supported\r\n",
+			(unsigned)hdr->e_ident[EI_CLASS],
+			(unsigned)ELFCLASS64);
+		out->output_string(out, msg);
+		return EFI_UNSUPPORTED;
+	}
+
+	if (hdr->e_phnum == 0) {
+		u16snprintf(msg, sizeof(msg),
+			"ELF file doesn't contain any program headers\r\n");
+		out->output_string(out, msg);
+		return EFI_UNSUPPORTED;
+	}
+
+	if (hdr->e_phentsize != sizeof(struct elf64_phdr)) {
+		u16snprintf(msg, sizeof(msg),
+			"Unexpected ELF program header size %u, only size %u is supported\r\n",
+			(unsigned)hdr->e_phentsize,
+			(unsigned)sizeof(struct elf64_phdr));
+		out->output_string(out, msg);
+		return EFI_UNSUPPORTED;
+	}
+
+	return EFI_SUCCESS;
+}
+
+static efi_status_t dump_elf64_program_header(
+	struct efi_simple_text_output_protocol *out,
+	const struct elf64_phdr *phdr)
+{
+	const char *type[] = {
+		"PT_NULL",
+		"PT_LOAD",
+		"PT_DYNAMIC",
+		"PT_INTERP",
+		"PT_NOTE",
+		"PT_SHLIB",
+		"PT_PHDR",
+		"PT_TLS"
+	};
+	const char *flag[] = {
+		"empty",
+		"PF_X",
+		"PF_W",
+		"PF_X | PF_W",
+		"PF_R",
+		"PF_X | PF_R",
+		"PF_W | PF_R",
+		"PF_X | PF_W | PF_R"
+	};
+
+	efi_status_t status;
+	uint16_t msg[512];
+
+	if (phdr->p_type < sizeof(type) / sizeof(type[0]))
+		u16snprintf(
+			msg, sizeof(msg), "p_type: %s, ", type[phdr->p_type]);
+	else
+		u16snprintf(
+			msg, sizeof(msg), "p_type: 0x%lx, ", (unsigned long)phdr->p_type);
+
+	status = out->output_string(out, msg);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	u16snprintf(msg, sizeof(msg),
+		"p_flags: %s, "
+		"p_offset: 0x%llx, "
+		"p_vaddr: 0x%llx, "
+		"p_paddr: 0x%llx, "
+		"p_filesz: 0x%llx, "
+		"p_memsz: 0x%llx, "
+		"p_align: 0x%llx\r\n",
+		flag[phdr->p_flags & 7],
+		(unsigned long long)phdr->p_offset,
+		(unsigned long long)phdr->p_vaddr,
+		(unsigned long long)phdr->p_paddr,
+		(unsigned long long)phdr->p_filesz,
+		(unsigned long long)phdr->p_memsz,
+		(unsigned long long)phdr->p_align);
+	return out->output_string(out, msg);
 }
 
 efi_status_t efi_main(
@@ -192,31 +282,48 @@ efi_status_t efi_main(
 	struct efi_system_table *system)
 {
 	uint16_t path[] = u"efi\\boot\\kernel";
+	struct elf64_phdr *phdrs;
 	struct elf64_ehdr hdr;
 	struct efi_file_protocol *kernel;
 	struct efi_app app;
 	efi_status_t status, other;
 
 	status = setup(handle, system, &app);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		goto out;
 
 	status = app.rootdir->open(
 		app.rootdir, &kernel, path, EFI_FILE_MODE_READ, EFI_FILE_READ_ONLY);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		goto out;
 
 	status = read_elf64_header(kernel, &hdr);
-	if (status != 0)
+	if (status != EFI_SUCCESS)
 		goto close;
 
-	status = dump_elf64_header(app.system->out, &hdr);
-	if (status != 0)
+	status = verify_elft64_header(app.system->err, &hdr);
+	if (status != EFI_SUCCESS)
 		goto close;
+
+	status = read_efl64_program_headers(
+		app.system->boot, kernel, &hdr, &phdrs);
+	if (status != EFI_SUCCESS)
+		goto close;
+
+	for (size_t i = 0; i < hdr.e_phnum; ++i) {
+		status = dump_elf64_program_header(app.system->out, &phdrs[i]);
+		if (status != EFI_SUCCESS)
+			goto free;
+	}
+
+free:
+	other = app.system->boot->free_pool(phdrs);
+	if (status != EFI_SUCCESS && other != EFI_SUCCESS)
+		status = other;
 
 close:
 	other = kernel->close(kernel);
-	if (status == 0 && other != 0)
+	if (status == EFI_SUCCESS && other != EFI_SUCCESS)
 		status = other;
 
 out:
