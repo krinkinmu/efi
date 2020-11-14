@@ -11,6 +11,13 @@ struct efi_app {
 	struct efi_file_protocol *rootdir;
 };
 
+struct elf_app {
+	struct efi_system_table *system;
+	struct efi_file_protocol *kernel;
+	struct elf64_ehdr header;
+	struct elf64_phdr *program_headers;
+};
+
 static efi_status_t efi_read_fixed(
 	struct efi_file_protocol *file,
 	uint64_t offset,
@@ -78,7 +85,7 @@ static efi_status_t get_rootdir(
 	return rootfs->open_volume(rootfs, rootdir);
 }
 
-static efi_status_t setup(
+static efi_status_t setup_efi_app(
 	efi_handle_t handle,
 	struct efi_system_table *system,
 	struct efi_app *app)
@@ -106,7 +113,7 @@ static efi_status_t setup(
 	return system->out->clear_screen(system->out);
 }
 
-static efi_status_t cleanup(
+static efi_status_t cleanup_efi_app(
 	struct efi_app *app)
 {
 	struct efi_guid image_guid = EFI_LOADED_IMAGE_PROTOCOL_GUID;
@@ -167,7 +174,7 @@ static efi_status_t read_efl64_program_headers(
 	return EFI_SUCCESS;
 }
 
-static efi_status_t verify_elft64_header(
+static efi_status_t verify_elf64_header(
 	struct efi_simple_text_output_protocol *out,
 	const struct elf64_ehdr *hdr)
 {
@@ -218,6 +225,55 @@ static efi_status_t verify_elft64_header(
 	}
 
 	return EFI_SUCCESS;
+}
+
+static efi_status_t setup_elf_app(
+	struct efi_app *efi, const uint16_t *path, struct elf_app *elf)
+{
+	efi_status_t status;
+
+	memset(elf, 0, sizeof(*elf));
+	elf->system = efi->system;
+
+	status = efi->rootdir->open(
+		efi->rootdir,
+		&elf->kernel,
+		(uint16_t *)path,
+		EFI_FILE_MODE_READ,
+		EFI_FILE_READ_ONLY);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = read_elf64_header(elf->kernel, &elf->header);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = verify_elf64_header(elf->system->err, &elf->header);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	return read_efl64_program_headers(
+		elf->system->boot, elf->kernel, &elf->header, &elf->program_headers);
+}
+
+static efi_status_t cleanup_elf_app(struct elf_app *elf)
+{
+	efi_status_t status = EFI_SUCCESS;
+	efi_status_t other;
+
+	if (elf->program_headers) {
+		other = elf->system->boot->free_pool(elf->program_headers);
+		if (status == EFI_SUCCESS && other != EFI_SUCCESS)
+			status = other;
+	}
+
+	if (elf->kernel) {
+		other = elf->kernel->close(elf->kernel);
+		if (status == EFI_SUCCESS && other != EFI_SUCCESS)
+			status = other;
+	}
+
+	return status;
 }
 
 static efi_status_t dump_elf64_program_header(
@@ -277,56 +333,46 @@ static efi_status_t dump_elf64_program_header(
 	return out->output_string(out, msg);
 }
 
+static efi_status_t dump_elf_headers(struct elf_app *elf)
+{
+	uint16_t msg[] = u"Program headers:\r\n";
+	efi_status_t status;
+
+	status = elf->system->out->output_string(elf->system->out, msg);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	for (size_t i = 0; i < elf->header.e_phnum; ++i) {
+		status = dump_elf64_program_header(
+			elf->system->out, &elf->program_headers[i]);
+		if (status != EFI_SUCCESS)
+			return status;
+	}
+
+	return EFI_SUCCESS;
+}
+
 efi_status_t efi_main(
 	efi_handle_t handle,
 	struct efi_system_table *system)
 {
 	uint16_t path[] = u"efi\\boot\\kernel";
-	struct elf64_phdr *phdrs;
-	struct elf64_ehdr hdr;
-	struct efi_file_protocol *kernel;
 	struct efi_app app;
-	efi_status_t status, other;
+	struct elf_app kernel;
+	efi_status_t status;
 
-	status = setup(handle, system, &app);
+	status = setup_efi_app(handle, system, &app);
 	if (status != EFI_SUCCESS)
 		goto out;
 
-	status = app.rootdir->open(
-		app.rootdir, &kernel, path, EFI_FILE_MODE_READ, EFI_FILE_READ_ONLY);
+	status = setup_elf_app(&app, path, &kernel);
 	if (status != EFI_SUCCESS)
 		goto out;
 
-	status = read_elf64_header(kernel, &hdr);
-	if (status != EFI_SUCCESS)
-		goto close;
-
-	status = verify_elft64_header(app.system->err, &hdr);
-	if (status != EFI_SUCCESS)
-		goto close;
-
-	status = read_efl64_program_headers(
-		app.system->boot, kernel, &hdr, &phdrs);
-	if (status != EFI_SUCCESS)
-		goto close;
-
-	for (size_t i = 0; i < hdr.e_phnum; ++i) {
-		status = dump_elf64_program_header(app.system->out, &phdrs[i]);
-		if (status != EFI_SUCCESS)
-			goto free;
-	}
-
-free:
-	other = app.system->boot->free_pool(phdrs);
-	if (status != EFI_SUCCESS && other != EFI_SUCCESS)
-		status = other;
-
-close:
-	other = kernel->close(kernel);
-	if (status == EFI_SUCCESS && other != EFI_SUCCESS)
-		status = other;
+	status = dump_elf_headers(&kernel);
 
 out:
-	cleanup(&app);
+	cleanup_elf_app(&kernel);
+	cleanup_efi_app(&app);
 	return status;
 }
