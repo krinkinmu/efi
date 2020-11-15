@@ -16,6 +16,14 @@ struct elf_app {
 	struct efi_file_protocol *kernel;
 	struct elf64_ehdr header;
 	struct elf64_phdr *program_headers;
+	uint64_t image_begin;
+	uint64_t image_end;
+	uint64_t page_size;
+
+	// Only populated when image is loaded into mamory
+	uint64_t image_pages;
+	uint64_t image_addr;
+	uint64_t image_entry;
 };
 
 static efi_status_t efi_read_fixed(
@@ -239,6 +247,9 @@ static efi_status_t setup_elf_app(
 
 	memset(elf, 0, sizeof(*elf));
 	elf->system = efi->system;
+	elf->image_begin = UINT64_MAX;
+	elf->image_end = 0;
+	elf->page_size = 4096;
 
 	status = efi->rootdir->open(
 		efi->rootdir,
@@ -257,14 +268,43 @@ static efi_status_t setup_elf_app(
 	if (status != EFI_SUCCESS)
 		return status;
 
-	return read_efl64_program_headers(
+	status = read_efl64_program_headers(
 		elf->system->boot, elf->kernel, &elf->header, &elf->program_headers);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	for (size_t i = 0; i < elf->header.e_phnum; ++i) {
+		const struct elf64_phdr *phdr = &elf->program_headers[i];
+		uint64_t phdr_begin, phdr_end;
+
+		if (phdr->p_type != PT_LOAD)
+			continue;
+
+		phdr_begin = phdr->p_vaddr;
+		phdr_begin &= ~(phdr->p_align - 1);
+		if (phdr_begin < elf->image_begin)
+			elf->image_begin = phdr_begin;
+
+		phdr_end = phdr->p_vaddr + phdr->p_memsz;
+		phdr_end = (phdr_end + phdr->p_align - 1) & ~(phdr->p_align - 1);
+		if (phdr_end > elf->image_end)
+			elf->image_end = phdr_end;
+	}
+
+	return EFI_SUCCESS;
 }
 
 static efi_status_t cleanup_elf_app(struct elf_app *elf)
 {
 	efi_status_t status = EFI_SUCCESS;
 	efi_status_t other;
+
+	if (elf->image_pages) {
+		other = elf->system->boot->free_pages(
+			elf->image_addr, elf->image_pages);
+		if (status == EFI_SUCCESS && other != EFI_SUCCESS)
+			status = other;
+	}
 
 	if (elf->program_headers) {
 		other = elf->system->boot->free_pool(elf->program_headers);
@@ -357,6 +397,80 @@ static efi_status_t dump_elf_headers(struct elf_app *elf)
 	return EFI_SUCCESS;
 }
 
+static efi_status_t load_elf_image(struct elf_app *elf)
+{
+	// +1 page here is to avoid a hypothetical case when the allocator returns
+	// a physical address 0. Having kernel image at the address 0 is somewhat
+	// inconvenient, as we cannot use NULL pointers checks on physical
+	// addresses anymore. On the other hand this one additional page has to
+	// be taken into account in the code below.
+	uint64_t size = elf->page_size + (elf->image_end - elf->image_begin);
+	uint64_t addr;
+	uint16_t start_msg[] = u"Loading ELF image...\r\n";
+	uint16_t finish_msg[] = u"Loaded ELF image\r\n";
+	efi_status_t status;
+
+	status = elf->system->out->output_string(elf->system->out, start_msg);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	// I assume that the kernel image is position independent, so we can ignore
+	// virtual addresses in the program headers and only maintain the relative
+	// offsets between parts of the image. Ignoring virtual addresses allows us
+	// to avoid managing memory translation (page tables) here to load the
+	// image at the right virtual addres.
+	status = elf->system->boot->allocate_pages(
+		EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA, size / elf->page_size, &addr);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	elf->image_pages = size / elf->page_size;
+	elf->image_addr = addr;
+	elf->image_entry = elf->image_addr + elf->page_size
+		+ elf->header.e_entry - elf->image_begin;
+	memset((void *)elf->image_addr, 0, size);
+
+	for (size_t i = 0; i < elf->header.e_phnum; ++i) {
+		const struct elf64_phdr *phdr = &elf->program_headers[i];
+		uint64_t phdr_addr;
+
+		if (phdr->p_type != PT_LOAD)
+			continue;
+
+		phdr_addr = elf->image_addr + elf->page_size
+			+ phdr->p_vaddr - elf->image_begin;
+		status = efi_read_fixed(
+			elf->kernel, phdr->p_offset, phdr->p_filesz, (void *)phdr_addr);
+		if (status != EFI_SUCCESS)
+			return status;
+	}
+
+	return elf->system->out->output_string(elf->system->out, finish_msg);
+}
+
+static efi_status_t start_elf_image(struct elf_app *elf)
+{
+	uint16_t msg[] = u"Starting ELF image...\r\n";
+	uint16_t fail[] = u"Starting ELF image failed\r\n";
+	uint16_t success[] = u"ELF image successfully returned\r\n";
+	int (__attribute__((sysv_abi)) *entry)(void);
+	efi_status_t status;
+	int ret = 0;
+
+	status = elf->system->out->output_string(elf->system->out, msg);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	entry = (int (__attribute__((sysv_abi)) *)(void))elf->image_entry;
+	ret = (*entry)();
+	if (ret != 42) {
+		elf->system->out->output_string(elf->system->out, fail);
+		return EFI_LOAD_ERROR;
+	}
+	elf->system->out->output_string(elf->system->out, success);
+	return EFI_SUCCESS;
+}
+
 efi_status_t efi_main(
 	efi_handle_t handle,
 	struct efi_system_table *system)
@@ -375,6 +489,14 @@ efi_status_t efi_main(
 		goto out;
 
 	status = dump_elf_headers(&kernel);
+	if (status != EFI_SUCCESS)
+		goto out;
+
+	status = load_elf_image(&kernel);
+	if (status != EFI_SUCCESS)
+		goto out;
+
+	status = start_elf_image(&kernel);
 
 out:
 	cleanup_elf_app(&kernel);
