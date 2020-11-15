@@ -14,8 +14,10 @@ struct efi_boot_table
 	void (*unused2)();
 
 	// Memory Services
-	void (*unused3)();
-	void (*unused4)();
+	efi_status_t (*allocate_pages)(
+		enum efi_allocate_type, enum efi_memory_type, efi_uint_t, uint64_t *);
+	efi_status_t (*free_pages)(uint64_t, efi_uint_t);
+
 	void (*unused5)();
 
 	efi_status_t (*allocate_pool)(enum efi_memory_type, efi_uint_t, void **);
