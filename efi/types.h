@@ -10,6 +10,7 @@ typedef uint64_t efi_status_t;
 typedef uint64_t efi_uint_t;
 
 static const efi_status_t EFI_SUCCESS = 0;
+static const efi_status_t EFI_LOAD_ERROR = 1;
 static const efi_status_t EFI_UNSUPPORTED = 3;
 
 struct efi_time {
@@ -26,21 +27,26 @@ struct efi_time {
 	uint8_t pad2;
 };
 
-struct efi_guid
-{
+struct efi_guid {
 	uint32_t data1;
 	uint16_t data2;
 	uint16_t data3;
 	uint8_t data4[8];
 };
 
-struct efi_table_header
-{
+struct efi_table_header {
 	uint64_t signature;
 	uint32_t revision;
 	uint32_t header_size;
 	uint32_t crc32;
 	uint32_t reserved;
+};
+
+enum efi_allocate_type {
+	EFI_ALLOCATE_ANY_PAGES,
+	EFI_ALLOCATE_MAX_ADDRESS,
+	EFI_ALLOCATE_ADDRESS,
+	EFI_MAX_ALLOCATE_TYPE,
 };
 
 enum efi_memory_type {
