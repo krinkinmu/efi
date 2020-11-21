@@ -2,4 +2,4 @@
 *.d
 *.lib
 *.efi
-kernel
+*.elf

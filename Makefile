@@ -1,15 +1,14 @@
 CC := clang
 LD := lld
+ARCH ?= x86-64
 
-CFLAGS := \
-	-ffreestanding -MMD -mno-red-zone -std=c11 \
-	-target x86_64-unknown-windows -Wall -Werror -pedantic
-LDFLAGS := -flavor link -subsystem:efi_application -entry:efi_main
+ifeq ($(ARCH),x86-64)
+include x86-64.env
+else
+include aarch64.env
+endif
 
-KERNEL_CFLAGS := \
-	-ffreestanding -MMD -mno-red-zone -std=c11 -Wall -Werror -pedantic
-KERNEL_LDFLAGS := \
-	-flavor ld -e main
+export
 
 SRCS := main.c clib.c kernel.c
 
@@ -18,10 +17,10 @@ default: all
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-bootx64.efi: clib.o main.o
+boot.efi: clib.o main.o
 	$(LD) $(LDFLAGS) $^ -out:$@
 
-kernel: kernel.c
+kernel.elf: kernel.c
 	$(CC) $(KERNEL_CFLAGS) -c $< -o kernel.o
 	$(LD) $(KERNEL_LDFLAGS) kernel.o -o $@
 
@@ -29,7 +28,7 @@ kernel: kernel.c
 
 .PHONY: clean all default
 
-all: bootx64.efi kernel
+all: boot.efi kernel.elf
 
 clean:
-	rm -rf bootx64.efi kernel *.o *.d *.lib
+	rm -rf *.efi *.elf *.o *.d *.lib

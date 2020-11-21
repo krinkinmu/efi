@@ -1,4 +1,5 @@
 #include "clib.h"
+#include "compiler.h"
 #include "efi/efi.h"
 #include "elf.h"
 
@@ -453,7 +454,7 @@ static efi_status_t start_elf_image(struct elf_app *elf)
 	uint16_t msg[] = u"Starting ELF image...\r\n";
 	uint16_t fail[] = u"Starting ELF image failed\r\n";
 	uint16_t success[] = u"ELF image successfully returned\r\n";
-	int (__attribute__((sysv_abi)) *entry)(void);
+	int (ELFABI *entry)(void);
 	efi_status_t status;
 	int ret = 0;
 
@@ -461,7 +462,7 @@ static efi_status_t start_elf_image(struct elf_app *elf)
 	if (status != EFI_SUCCESS)
 		return status;
 
-	entry = (int (__attribute__((sysv_abi)) *)(void))elf->image_entry;
+	entry = (int (ELFABI *)(void))elf->image_entry;
 	ret = (*entry)();
 	if (ret != 42) {
 		elf->system->out->output_string(elf->system->out, fail);
