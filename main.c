@@ -270,7 +270,10 @@ static efi_status_t setup_elf_app(
 		return status;
 
 	status = read_efl64_program_headers(
-		elf->system->boot, elf->kernel, &elf->header, &elf->program_headers);
+		elf->system->boot,
+		elf->kernel,
+		&elf->header,
+		&elf->program_headers);
 	if (status != EFI_SUCCESS)
 		return status;
 
@@ -287,7 +290,8 @@ static efi_status_t setup_elf_app(
 			elf->image_begin = phdr_begin;
 
 		phdr_end = phdr->p_vaddr + phdr->p_memsz;
-		phdr_end = (phdr_end + phdr->p_align - 1) & ~(phdr->p_align - 1);
+		phdr_end =
+			(phdr_end + phdr->p_align - 1) & ~(phdr->p_align - 1);
 		if (phdr_end > elf->image_end)
 			elf->image_end = phdr_end;
 	}
@@ -400,11 +404,11 @@ static efi_status_t dump_elf_headers(struct elf_app *elf)
 
 static efi_status_t load_elf_image(struct elf_app *elf)
 {
-	// +1 page here is to avoid a hypothetical case when the allocator returns
-	// a physical address 0. Having kernel image at the address 0 is somewhat
-	// inconvenient, as we cannot use NULL pointers checks on physical
-	// addresses anymore. On the other hand this one additional page has to
-	// be taken into account in the code below.
+	// +1 page here is to avoid a hypothetical case when the allocator
+	// returns a physical address 0. Having kernel image at the address 0
+	// is somewhat inconvenient, as we cannot use NULL pointers checks on
+	// physical addresses anymore. On the other hand this one additional
+	// page has to be taken into account in the code below.
 	uint64_t size = elf->page_size + (elf->image_end - elf->image_begin);
 	uint64_t addr;
 	uint16_t start_msg[] = u"Loading ELF image...\r\n";
@@ -415,13 +419,16 @@ static efi_status_t load_elf_image(struct elf_app *elf)
 	if (status != EFI_SUCCESS)
 		return status;
 
-	// I assume that the kernel image is position independent, so we can ignore
-	// virtual addresses in the program headers and only maintain the relative
-	// offsets between parts of the image. Ignoring virtual addresses allows us
-	// to avoid managing memory translation (page tables) here to load the
-	// image at the right virtual addres.
+	// I assume that the kernel image is position independent, so we can
+	// ignore virtual addresses in the program headers and only maintain
+	// the relative offsets between parts of the image. Ignoring virtual
+	// addresses allows us to avoid managing memory translation (page
+	// tables) here to load the image at the right virtual addres.
 	status = elf->system->boot->allocate_pages(
-		EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA, size / elf->page_size, &addr);
+		EFI_ALLOCATE_ANY_PAGES,
+		EFI_LOADER_DATA,
+		size / elf->page_size,
+		&addr);
 	if (status != EFI_SUCCESS)
 		return status;
 
@@ -441,7 +448,10 @@ static efi_status_t load_elf_image(struct elf_app *elf)
 		phdr_addr = elf->image_addr + elf->page_size
 			+ phdr->p_vaddr - elf->image_begin;
 		status = efi_read_fixed(
-			elf->kernel, phdr->p_offset, phdr->p_filesz, (void *)phdr_addr);
+			elf->kernel,
+			phdr->p_offset,
+			phdr->p_filesz,
+			(void *)phdr_addr);
 		if (status != EFI_SUCCESS)
 			return status;
 	}
@@ -449,27 +459,66 @@ static efi_status_t load_elf_image(struct elf_app *elf)
 	return elf->system->out->output_string(elf->system->out, finish_msg);
 }
 
+static efi_status_t exit_efi_boot_services(struct efi_app *efi)
+{
+	struct efi_memory_descriptor *mmap = NULL;
+	efi_uint_t mmap_size = 0;
+	efi_uint_t mmap_key;
+	efi_uint_t desc_size;
+	uint32_t desc_version;
+	efi_status_t status;
+
+	status = efi->system->boot->get_memory_map(
+		&mmap_size, mmap, &mmap_key, &desc_size, &desc_version);
+	if (status != EFI_SUCCESS && status != EFI_BUFFER_TOO_SMALL)
+		return status;
+
+	// Subsequent memory allocation will change the memory map, so we have
+	// to allocate more memory then get_memory_map actually asked in the
+	// previous call. EFI API is super awkward this way, especially given
+	// that I don't even need the memory map itself, I just need the map
+	// key, but I can only get it on successful get_memory_map call.
+	mmap_size *= 2;
+
+	status = efi->system->boot->allocate_pool(
+		EFI_LOADER_DATA, mmap_size, (void **)&mmap);
+	if (status != EFI_SUCCESS)
+		return status;
+
+	status = efi->system->boot->get_memory_map(
+		&mmap_size, mmap, &mmap_key, &desc_size, &desc_version);
+	if (status != EFI_SUCCESS) {
+		efi->system->boot->free_pool(mmap);
+		return status;
+	}
+
+	// Now I obtained the memory map key, but I cannot free the allocated
+	// memory because it might change the memory map and invalidate the
+	// memory map key, which would defeat the purpose. So if the
+	// exit_boot_services call succeeds this memory is intentionally
+	// leaked.
+	status = efi->system->boot->exit_boot_services(efi->handle, mmap_key);
+	if (status != EFI_SUCCESS)
+		efi->system->boot->free_pool(mmap);
+
+	return status;
+}
+
 static efi_status_t start_elf_image(struct elf_app *elf)
 {
 	uint16_t msg[] = u"Starting ELF image...\r\n";
-	uint16_t fail[] = u"Starting ELF image failed\r\n";
-	uint16_t success[] = u"ELF image successfully returned\r\n";
-	int (ELFABI *entry)(void);
+	uint16_t fail[] = u"ELF image unexpectedly returned control!!!\r\n";
+	void (ELFABI *entry)(void);
 	efi_status_t status;
-	int ret = 0;
 
 	status = elf->system->out->output_string(elf->system->out, msg);
 	if (status != EFI_SUCCESS)
 		return status;
 
-	entry = (int (ELFABI *)(void))elf->image_entry;
-	ret = (*entry)();
-	if (ret != 42) {
-		elf->system->out->output_string(elf->system->out, fail);
-		return EFI_LOAD_ERROR;
-	}
-	elf->system->out->output_string(elf->system->out, success);
-	return EFI_SUCCESS;
+	entry = (void (ELFABI *)(void))elf->image_entry;
+	(*entry)();
+	elf->system->out->output_string(elf->system->out, fail);
+	return EFI_LOAD_ERROR;
 }
 
 efi_status_t efi_main(
@@ -494,6 +543,10 @@ efi_status_t efi_main(
 		goto out;
 
 	status = load_elf_image(&kernel);
+	if (status != EFI_SUCCESS)
+		goto out;
+
+	status = exit_efi_boot_services(&app);
 	if (status != EFI_SUCCESS)
 		goto out;
 
