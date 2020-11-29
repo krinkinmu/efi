@@ -12,7 +12,6 @@ typedef uint64_t efi_uint_t;
 static const efi_status_t EFI_SUCCESS = 0;
 static const efi_status_t EFI_LOAD_ERROR = 1;
 static const efi_status_t EFI_UNSUPPORTED = 3;
-static const efi_status_t EFI_BUFFER_TOO_SMALL = 5;
 
 struct efi_time {
 	uint16_t year;
@@ -41,14 +40,6 @@ struct efi_table_header {
 	uint32_t header_size;
 	uint32_t crc32;
 	uint32_t reserved;
-};
-
-struct efi_memory_descriptor {
-	uint32_t type;
-	uint64_t physical_start;
-	uint64_t virtual_start;
-	uint64_t pages;
-	uint64_t attributes;
 };
 
 enum efi_allocate_type {

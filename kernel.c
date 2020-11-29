@@ -1,4 +1,4 @@
-void main(void)
+int main(void)
 {
-	while (1) {}
+	return 42;
 }

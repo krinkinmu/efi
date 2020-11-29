@@ -15,19 +15,12 @@ struct efi_boot_table
 
 	// Memory Services
 	efi_status_t (*allocate_pages)(
-		enum efi_allocate_type,
-		enum efi_memory_type,
-		efi_uint_t,
-		uint64_t *);
+		enum efi_allocate_type, enum efi_memory_type, efi_uint_t, uint64_t *);
 	efi_status_t (*free_pages)(uint64_t, efi_uint_t);
-	efi_status_t (*get_memory_map)(
-		efi_uint_t *,
-		struct efi_memory_descriptor *,
-		efi_uint_t *,
-		efi_uint_t *,
-		uint32_t *);
-	efi_status_t (*allocate_pool)(
-		enum efi_memory_type, efi_uint_t, void **);
+
+	void (*unused5)();
+
+	efi_status_t (*allocate_pool)(enum efi_memory_type, efi_uint_t, void **);
 	efi_status_t (*free_pool)(void *);
 
 	// Event & Timer Services
@@ -54,8 +47,7 @@ struct efi_boot_table
 	void (*unused22)();
 	void (*unused23)();
 	void (*unused24)();
-
-	efi_status_t (*exit_boot_services)(efi_handle_t, efi_uint_t);
+	void (*unused25)();
 
 	// Miscellaneius Services
 	void (*unused26)();
