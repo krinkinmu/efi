@@ -2,6 +2,7 @@
 #include "compiler.h"
 #include "efi/efi.h"
 #include "elf.h"
+#include "io.h"
 
 struct efi_app {
 	struct efi_system_table *system;
@@ -26,33 +27,6 @@ struct elf_app {
 	uint64_t image_addr;
 	uint64_t image_entry;
 };
-
-static efi_status_t efi_read_fixed(
-	struct efi_file_protocol *file,
-	uint64_t offset,
-	size_t size,
-	void *dst)
-{
-	efi_status_t status;
-	unsigned char *buf = dst;
-	size_t read = 0;
-
-	status = file->set_position(file, offset);
-	if (status != EFI_SUCCESS)
-		return status;
-
-	while (read < size) {
-		efi_uint_t remains = size - read;
-
-		status = file->read(file, &remains, (void *)(buf + read));
-		if (status != EFI_SUCCESS)
-			return status;
-
-		read += remains;
-	}
-
-	return EFI_SUCCESS;
-}
 
 static efi_status_t get_image(
 	efi_handle_t app,
