@@ -11,6 +11,7 @@ typedef uint64_t efi_uint_t;
 
 static const efi_status_t EFI_SUCCESS = 0;
 static const efi_status_t EFI_LOAD_ERROR = 1;
+static const efi_status_t EFI_INVALID_PARAMETER = 2;
 static const efi_status_t EFI_UNSUPPORTED = 3;
 static const efi_status_t EFI_BUFFER_TOO_SMALL = 5;
 
