@@ -10,14 +10,14 @@ endif
 
 export
 
-SRCS := main.c clib.c io.c kernel.c
+SRCS := main.c clib.c io.c loader.c kernel.c
 
 default: all
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-boot.efi: clib.o io.o main.o
+boot.efi: clib.o io.o loader.o main.o
 	$(LD) $(LDFLAGS) $^ -out:$@
 
 kernel.elf: kernel.c
