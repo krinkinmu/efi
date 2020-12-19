@@ -465,6 +465,32 @@ size_t u16strlen(const uint16_t *str)
 	return pos - str - 1;
 }
 
+char *strncpy(char *dst, const char *src, size_t size)
+{
+	size_t i = 0;
+
+	for (; i < size && src[i]; ++i)
+		dst[i] = src[i];
+
+	for (; i < size; ++i)
+		dst[i] = '\0';
+
+	return dst;
+}
+
+uint16_t *to_u16strncpy(uint16_t *dst, const char *src, size_t size)
+{
+	size_t i = 0;
+
+	for (; i < size && src[i]; ++i)
+		dst[i] = src[i];
+
+	for (; i < size; ++i)
+		dst[i] = '\0';
+
+	return dst;
+}
+
 void *memset(void *ptr, int value, size_t size)
 {
 	char *to = ptr;
@@ -487,4 +513,19 @@ void *memcpy(void *dst, const void *src, size_t size)
 int isdigit(int code)
 {
 	return code >= '0' && code <= '9';
+}
+
+int isalpha(int code)
+{
+	return (code >= 'a' && code <= 'z') || (code >= 'A' && code <= 'Z');
+}
+
+int isalnum(int code)
+{
+	return isdigit(code) || isalpha(code);
+}
+
+int isspace(int code)
+{
+	return code == ' ' || code == '\r' || code == '\n' || code == '\t';
 }

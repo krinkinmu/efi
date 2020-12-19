@@ -6,10 +6,18 @@
 #include <stdint.h>
 
 size_t strlen(const char *str);
-size_t u16strlen(const uint16_t *str);
+
+char *strncpy(char *dst, const char *src, size_t size);
 void *memcpy(void *dst, const void *src, size_t size);
 void *memset(void *ptr, int value, size_t size);
+
 int isdigit(int code);
+int isalpha(int code);
+int isalnum(int code);
+int isspace(int code);
+
 int u16snprintf(uint16_t *buffer, size_t size, const char *fmt, ...);
+size_t u16strlen(const uint16_t *str);
+uint16_t *to_u16strncpy(uint16_t *dst, const char *src, size_t size);
 
 #endif  // __CLIB_H__
