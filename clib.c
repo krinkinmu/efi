@@ -465,6 +465,22 @@ size_t u16strlen(const uint16_t *str)
 	return pos - str - 1;
 }
 
+int strcmp(const char *l, const char *r)
+{
+	while (*l == *r && *l != '\0') {
+		++l;
+		++r;
+	}
+
+	if (*l == *r)
+		return 0;
+
+	if (*l < *r)
+		return -1;
+	else
+		return 1;
+}
+
 char *strncpy(char *dst, const char *src, size_t size)
 {
 	size_t i = 0;
