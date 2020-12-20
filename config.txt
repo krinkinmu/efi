@@ -1,0 +1,2 @@
+kernel: efi\boot\kernel
+data: efi\boot\kernel
