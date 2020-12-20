@@ -2,6 +2,7 @@
 
 #include "clib.h"
 #include "io.h"
+#include "log.h"
 
 
 static size_t skip_ws(const char *data, size_t i)
@@ -13,7 +14,10 @@ static size_t skip_ws(const char *data, size_t i)
 
 static size_t skip_name(const char *data, size_t i)
 {
-	while (isalnum(data[i]) || data[i] == '_' || data[i] == '-')
+	while (isalnum(data[i])
+	       || data[i] == '_'
+	       || data[i] == '-'
+	       || data[i] == '.')
 		++i;
 	return i;
 }
@@ -23,6 +27,7 @@ static size_t skip_path(const char *data, size_t i)
 	while (isalnum(data[i])
 	       || data[i] == '_'
 	       || data[i] == '-'
+	       || data[i] == '.'
 	       || data[i] == '\\'
 	       || data[i] == '/')
 		++i;
@@ -47,8 +52,12 @@ static efi_status_t add_module(
 			EFI_LOADER_DATA,
 			new_size * sizeof(struct module),
 			(void **)&new_module);
-		if (status != EFI_SUCCESS)
+		if (status != EFI_SUCCESS) {
+			err(
+				loader->system,
+				"failed to allocate buffer for modules\r\n");
 			return status;
+		}
 
 		memcpy(
 			new_module,
@@ -60,8 +69,12 @@ static efi_status_t add_module(
 		if (old_module != NULL) {
 			status = loader->system->boot->free_pool(
 				(void *)old_module);
-			if (status != EFI_SUCCESS)
+			if (status != EFI_SUCCESS) {
+				err(
+					loader->system,
+					"failed to free buffer for modules\r\n");
 				return status;
+			}
 		}
 	}
 
@@ -87,8 +100,14 @@ efi_status_t load_config(
 		(uint16_t *)config_path,
 		EFI_FILE_MODE_READ,
 		EFI_FILE_READ_ONLY);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		err(
+			loader->system,
+			"failed to open %w: %llu\r\n",
+			config_path,
+			(unsigned long long)status);
 		return status;
+	}
 
 	size = sizeof(file_info);
 	status = loader->config->get_info(
@@ -96,19 +115,32 @@ efi_status_t load_config(
 		&guid,
 		&size,
 		(void *)&file_info);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		err(
+			loader->system,
+			"failed to find size of %w: %llu\r\n",
+			config_path,
+			(unsigned long long)status);
 		return status;
+	}
 
 	status = loader->system->boot->allocate_pool(
 		EFI_LOADER_DATA,
 		file_info.file_size + 1,
 		(void **)&loader->config_data);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		err(
+			loader->system,
+			"failed to allocate buffer for %w data: %llu\r\n",
+			config_path,
+			(unsigned long long)status);
 		return status;
+	}
 
 	memset((void *)loader->config_data, 0, file_info.file_size + 1);
 
 	return efi_read_fixed(
+		loader->system,
 		loader->config,
 		/* offset */0,
 		/* size */file_info.file_size,
@@ -128,7 +160,7 @@ efi_status_t parse_config(struct loader *loader)
 
 		i = skip_ws(loader->config_data, i);
 		if (loader->config_data[i] == '\0')
-			return EFI_SUCCESS;
+			break;
 
 		name_begin = i;
 		i = skip_name(loader->config_data, i);
@@ -137,10 +169,14 @@ efi_status_t parse_config(struct loader *loader)
 
 		/* We expect ':' after name and before the path, and if it's
 		 * not there, then something went wrong, so we can fail here. */
-		if (loader->config_data[i] != ':')
+		if (loader->config_data[i] != ':') {
+			err(
+				loader->system,
+				"incorrect config format: missing ':'\r\n");
 			return EFI_INVALID_PARAMETER;
+		}
 
-		i = skip_ws(loader->config_data, i);
+		i = skip_ws(loader->config_data, i + 1);
 		path_begin = i;
 		i = skip_path(loader->config_data, i);
 		path_size = i - path_begin;
@@ -149,15 +185,30 @@ efi_status_t parse_config(struct loader *loader)
 		 * we hit the end of the file prematurely or encountered an
 		 * unsupported character. Check here that the name and path
 		 * arent't actually empty to catch problems of that kind. */
-		if (name_size == 0 || path_size == 0)
+		if (name_size == 0) {
+			err(
+				loader->system,
+				"invalid config format: empty module name\r\n");
 			return EFI_INVALID_PARAMETER;
+		}
+
+		if (path_size == 0) {
+			err(
+				loader->system,
+				"invalid config format: empty module path\r\n");
+			return EFI_INVALID_PARAMETER;
+		}
 
 		status = loader->system->boot->allocate_pool(
 			EFI_LOADER_DATA,
 			name_size + 1,
 			(void **)&name);
-		if (status != EFI_SUCCESS)
+		if (status != EFI_SUCCESS) {
+			err(
+				loader->system,
+				"failed to allocate buffer for module name\r\n");
 			return status;
+		}
 		strncpy(name, &loader->config_data[name_begin], name_size);
 		name[name_size] = '\0';
 
@@ -165,15 +216,24 @@ efi_status_t parse_config(struct loader *loader)
 			EFI_LOADER_DATA,
 			2 * (path_size + 1),
 			(void **)&path);
-		if (status != EFI_SUCCESS)
+		if (status != EFI_SUCCESS) {
+			err(
+				loader->system,
+				"failed to allocate buffer for module path\r\n");
 			return status;
+		}
 		to_u16strncpy(
 			path, &loader->config_data[path_begin], path_size);
 		path[path_size] = '\0';
 
 		status = add_module(loader, name, path);
-		if (status != EFI_SUCCESS)
+		if (status != EFI_SUCCESS) {
+			err(
+				loader->system,
+				"failed to add module %s\r\n",
+				name);
 			return status;
+		}
 	}
 
 	for (size_t j = 0; j < loader->modules; ++j) {
@@ -185,5 +245,8 @@ efi_status_t parse_config(struct loader *loader)
 	}
 
 	/* If we got here, it means that we couldn't find the kernel module. */
+	err(
+		loader->system,
+		"invalid config format: no kernel module\r\n");
 	return EFI_INVALID_PARAMETER;
 }
