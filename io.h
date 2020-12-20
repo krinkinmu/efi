@@ -7,6 +7,7 @@
 #include "efi/efi.h"
 
 efi_status_t efi_read_fixed(
+	struct efi_system_table *system,
 	struct efi_file_protocol *file,
 	uint64_t offset,
 	size_t size,

@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "efi/efi.h"
+#include "elf.h"
 
 
 /* Each module describes a file that should be loaded in memory. Some files
@@ -15,6 +16,12 @@
 struct module {
 	const uint16_t *path;
 	const char *name;
+};
+
+struct reserve {
+	const char *name;
+	uint64_t begin;
+	uint64_t end;
 };
 
 struct loader {
@@ -35,6 +42,16 @@ struct loader {
 	size_t module_capacity;
 	size_t modules;
 	size_t kernel;
+
+	/* Bookkeeping information for loading ELF binary in memory. */
+	struct efi_file_protocol *kernel_image;
+	struct elf64_ehdr kernel_header;
+	struct elf64_phdr *program_headers;
+	uint64_t kernel_image_entry;
+
+	struct reserve *reserve;
+	size_t reserve_capacity;
+	size_t reserves;
 };
 
 efi_status_t setup_loader(
@@ -54,5 +71,18 @@ efi_status_t load_config(struct loader *loader, const uint16_t *config_path);
  * keys and values. Values are separated from keys by ':' and the key:value
  * paris are separated from each other by whitespace characters. */
 efi_status_t parse_config(struct loader *loader);
+
+/* Load ELF binary specified in the config into memory. It's expected that 
+ * this function will be called only after successfully parsing the config. */
+efi_status_t load_kernel(struct loader *loader);
+
+/* Load all modules that are not kernel ELF images if any. It's expected that
+ * this function will be called only after successfully parsing the config. */
+efi_status_t load_modules(struct loader *loader);
+
+/* Shutdown EFI services and transfer exectution control to the kernel.
+ * This function is expected to be called after the kernel and the modules
+ * have been loaded successfully. */
+efi_status_t start_kernel(struct loader *loader);
 
 #endif  // __LOADER_H__
