@@ -332,8 +332,7 @@ static int format_parse(const char *str, struct format *config)
 	return 0;
 }
 
-static int vsnprintf(
-	uint16_t *buffer, size_t size, const char *fmt, va_list args)
+int vsnprintf(uint16_t *buffer, size_t size, const char *fmt, va_list args)
 {
 	struct format_buffer buf = { buffer, size - 1, 0 };
 	const char *current = fmt;
