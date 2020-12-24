@@ -159,7 +159,7 @@ static efi_status_t verify_elf64_header(
 		return EFI_UNSUPPORTED;
 	}
 
-	if (hdr->e_type != ET_EXEC) {
+	if (hdr->e_type != ET_EXEC && hdr->e_type != ET_DYN) {
 		err(
 			system,
 			"Unsupported ELF file type 0x%x, the only type 0x%x is supported\r\n",
