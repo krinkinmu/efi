@@ -9,11 +9,15 @@ typedef void *efi_handle_t;
 typedef uint64_t efi_status_t;
 typedef uint64_t efi_uint_t;
 
+static const uint64_t MAX_BIT = 0x8000000000000000ULL;
+
+#define ERROR_CODE(status) (MAX_BIT | (status))
+
 static const efi_status_t EFI_SUCCESS = 0;
-static const efi_status_t EFI_LOAD_ERROR = 1;
-static const efi_status_t EFI_INVALID_PARAMETER = 2;
-static const efi_status_t EFI_UNSUPPORTED = 3;
-static const efi_status_t EFI_BUFFER_TOO_SMALL = 5;
+static const efi_status_t EFI_LOAD_ERROR = ERROR_CODE(1);
+static const efi_status_t EFI_INVALID_PARAMETER = ERROR_CODE(2);
+static const efi_status_t EFI_UNSUPPORTED = ERROR_CODE(3);
+static const efi_status_t EFI_BUFFER_TOO_SMALL = ERROR_CODE(5);
 
 struct efi_time {
 	uint16_t year;
